@@ -5,6 +5,11 @@ import { IN_DEV } from '~/consts'
 import i18n from '~/i18n'
 import { blobStore } from '~/storage/blob'
 import logger from '~/utils/logger'
+import {
+	DEFAULT_LOG_DIRECTORY,
+	normalizeLogDirectory,
+	saveLogNote,
+} from '~/utils/log-note'
 import logsStringify from '~/utils/logs-stringify'
 import BaseSettings from './settings.base'
 
@@ -54,6 +59,23 @@ export default class TroubleshootingSettings extends BaseSettings {
 					.setButtonText(i18n.t('settings.log.saveToNote'))
 					.onClick(async () => {
 						await this.saveLogsToNote()
+					})
+			})
+
+		new Setting(this.containerEl)
+			.setName(i18n.t('settings.log.directoryName'))
+			.setDesc(
+				i18n.t('settings.log.directoryDesc', {
+					defaultPath: DEFAULT_LOG_DIRECTORY,
+				}),
+			)
+			.addText((text) => {
+				text
+					.setPlaceholder(DEFAULT_LOG_DIRECTORY)
+					.setValue(this.plugin.settings.logDirectory)
+					.onChange(async (value) => {
+						this.plugin.settings.logDirectory = normalizeLogDirectory(value)
+						await this.plugin.settingsService.saveSettings()
 					})
 			})
 
@@ -113,16 +135,14 @@ export default class TroubleshootingSettings extends BaseSettings {
 		try {
 			const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
 			const fileName = `nutstore-logs-${timestamp}.md`
-			const dirPath = 'nutstore-sync/logs'
-			const filePath = `${dirPath}/${fileName}`
 			const content = `# Nutstore Plugin Logs\n\nGenerated at: ${new Date().toLocaleString()}\n\nPlugin version: ${this.plugin.manifest.version}\n\n---\n\n${this.logs}`
 
-			const folderExists = await this.app.vault.adapter.exists(dirPath)
-			if (!folderExists) {
-				await this.app.vault.adapter.mkdir(dirPath)
-			}
-
-			const file = await this.app.vault.create(filePath, content)
+			const { file, filePath } = await saveLogNote(
+				this.app.vault,
+				this.plugin.settings.logDirectory,
+				fileName,
+				content,
+			)
 			new Notice(i18n.t('settings.log.savedToNote', { fileName: filePath }))
 			await this.app.workspace.getLeaf().openFile(file)
 		} catch (error) {

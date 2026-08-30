@@ -19,6 +19,7 @@ import { ConflictStrategy } from '~/sync/tasks/conflict-resolve.task'
 import { DEFAULT_MOBILE_APP_DOWNLOAD_FILE_CHUNK_SIZE } from '~/utils/download-chunk-size'
 import { migrateLegacyFilterRules } from '~/utils/glob-match'
 import logger from '~/utils/logger'
+import { normalizeLogDirectory } from '~/utils/log-note'
 import { BaseService } from './service.interface'
 import type NutstorePlugin from '..'
 
@@ -73,6 +74,9 @@ export default class SettingsService extends BaseService {
 		this.plugin.settings.mobileAppDownloadFileChunkSize ||=
 			(this.plugin.settings as { downloadChunkSize?: string })
 				.downloadChunkSize || DEFAULT_MOBILE_APP_DOWNLOAD_FILE_CHUNK_SIZE
+		this.plugin.settings.logDirectory = normalizeLogDirectory(
+			this.plugin.settings.logDirectory,
+		)
 		this.plugin.settings.ai ??= {
 			providers: {},
 			defaultModel: undefined,

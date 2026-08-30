@@ -379,6 +379,8 @@
 			"saveToNote": "Save to note",
 			"savedToNote": "Logs saved to note: {{fileName}}",
 			"saveError": "Failed to save logs",
+			"directoryName": "Log save folder",
+			"directoryDesc": "Vault-relative folder for saved console logs. Empty or invalid paths use {{defaultPath}}.",
 			"clear": "Clear",
 			"cleared": "Console logs cleared",
 			"clearName": "Clear logs",

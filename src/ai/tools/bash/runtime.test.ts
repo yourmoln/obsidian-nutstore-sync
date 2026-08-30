@@ -1179,6 +1179,7 @@ describe('settings virtual file through bash', () => {
 			language: undefined,
 			ai: { providers: {} },
 			configDirSyncMode: 'none',
+			logDirectory: 'nutstore-sync/logs',
 		}
 	}
 

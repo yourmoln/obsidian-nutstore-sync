@@ -379,6 +379,8 @@
 			"saveToNote": "保存到笔记",
 			"savedToNote": "日志已保存到笔记: {{fileName}}",
 			"saveError": "保存日志失败",
+			"directoryName": "日志保存文件夹",
+			"directoryDesc": "保存控制台日志的 Vault 相对路径。留空或路径无效时使用 {{defaultPath}}。",
 			"clear": "清除",
 			"cleared": "控制台日志已清除",
 			"clearName": "清除日志",
