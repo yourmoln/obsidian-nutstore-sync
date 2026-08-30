@@ -47,6 +47,12 @@ export default class SettingsService extends BaseService {
 
 	async loadSettings() {
 		const storedSettings = await this.plugin.loadData()
+		await this.applyStoredSettings(storedSettings)
+	}
+
+	private async applyStoredSettings(
+		storedSettings: Awaited<ReturnType<NutstorePlugin['loadData']>>,
+	) {
 		this.plugin.settings = Object.assign(
 			{},
 			DEFAULT_SETTINGS,
@@ -127,9 +133,30 @@ export default class SettingsService extends BaseService {
 				...requestedOverrides,
 			})
 			await this.plugin.saveData(snapshot)
+			Object.assign(this.plugin.settings, cloneDeep(requestedOverrides))
 		})
 		this.settingsPersistenceQueue = persistence.catch(() => undefined)
 		return persistence
+	}
+
+	private async loadSettingsAfterPersistence() {
+		while (true) {
+			const observedQueue = this.settingsPersistenceQueue
+			await observedQueue
+			if (observedQueue !== this.settingsPersistenceQueue) {
+				continue
+			}
+
+			const storedSettings = await this.plugin.loadData()
+			if (observedQueue !== this.settingsPersistenceQueue) {
+				continue
+			}
+
+			await this.applyStoredSettings(storedSettings)
+			if (observedQueue === this.settingsPersistenceQueue) {
+				return
+			}
+		}
 	}
 
 	/**
@@ -185,7 +212,7 @@ export default class SettingsService extends BaseService {
 		}
 
 		const reloadPromise = (async () => {
-			await this.loadSettings()
+			await this.loadSettingsAfterPersistence()
 			await this.loadLocalSettings()
 			this.plugin.modelsPresetService.initializeFromLocalSettings()
 			await this.plugin.nutstoreLlmGatewayService.initializeProviderFromStoredAuth()

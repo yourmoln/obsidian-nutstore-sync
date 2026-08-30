@@ -134,6 +134,18 @@ describe('normalizeLogDirectory', () => {
 		expect(normalizeLogDirectory(nfdDirectory, 'config')).toBe(nfdDirectory)
 	})
 
+	it('case-folds Greek sigma variants when excluding configDir', () => {
+		const configDir = '\u03a3-config'
+		const finalSigmaDirectory = '\u03c2-config/logs'
+
+		expect(normalizeLogDirectory(finalSigmaDirectory, configDir)).toBe(
+			DEFAULT_LOG_DIRECTORY,
+		)
+		expect(normalizeLogDirectory('notes/\u03c2-logs', configDir)).toBe(
+			'notes/\u03c2-logs',
+		)
+	})
+
 	it('accepts path segments at the 255-byte UTF-8 boundary', () => {
 		const asciiPath = 'a'.repeat(255)
 		const multibytePath = '界'.repeat(85)

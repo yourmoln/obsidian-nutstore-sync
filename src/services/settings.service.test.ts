@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
 import type NutstorePlugin from '~/index'
-import { DEFAULT_SETTINGS } from '~/settings'
+import { DEFAULT_SETTINGS, type NutstoreSettings } from '~/settings'
 import { DEFAULT_LOG_DIRECTORY } from '~/utils/log-note'
 import SettingsService from './settings.service'
+
+function createDeferred<T = void>() {
+	let resolve!: (value: T) => void
+	let reject!: (reason?: unknown) => void
+	const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+		resolve = resolvePromise
+		reject = rejectPromise
+	})
+	return { promise, reject, resolve }
+}
 
 function createPlugin(logDirectory: unknown, configDir = '.obsidian') {
 	return {
@@ -127,5 +137,127 @@ describe('SettingsService log directory loading', () => {
 		expect(saveData.mock.calls[1][0]).toMatchObject({
 			logDirectory: 'second/logs',
 		})
+	})
+
+	it('publishes successful overrides before a queued full save snapshots settings', async () => {
+		const firstWrite = createDeferred()
+		const saveData = vi
+			.fn()
+			.mockImplementationOnce(async () => firstWrite.promise)
+			.mockResolvedValueOnce(undefined)
+		const plugin = {
+			settings: { ...DEFAULT_SETTINGS },
+			saveData,
+		} as unknown as NutstorePlugin
+		const service = new SettingsService(plugin)
+
+		const directoryPersistence = service.persistSettings({
+			logDirectory: 'notes/logs',
+		})
+		await vi.waitFor(() => expect(saveData).toHaveBeenCalledOnce())
+		plugin.settings.account = 'latest-account'
+		const fullPersistence = service.persistSettings()
+
+		firstWrite.resolve()
+		await Promise.all([directoryPersistence, fullPersistence])
+
+		expect(plugin.settings.logDirectory).toBe('notes/logs')
+		expect(saveData.mock.calls[1][0]).toMatchObject({
+			account: 'latest-account',
+			logDirectory: 'notes/logs',
+		})
+	})
+
+	it('waits for rejected and newly queued persistence before reloading settings', async () => {
+		const firstWrite = createDeferred()
+		const secondWrite = createDeferred()
+		const saveData = vi
+			.fn()
+			.mockImplementationOnce(async () => firstWrite.promise)
+			.mockImplementationOnce(async () => secondWrite.promise)
+		const loadData = vi.fn().mockResolvedValue({ ...DEFAULT_SETTINGS })
+		const plugin = {
+			app: { vault: { configDir: '.obsidian', adapter: {} } },
+			settings: { ...DEFAULT_SETTINGS },
+			loadData,
+			saveData,
+			modelsPresetService: { initializeFromLocalSettings: vi.fn() },
+			nutstoreLlmGatewayService: {
+				initializeProviderFromStoredAuth: vi.fn(),
+			},
+			i18nService: { update: vi.fn() },
+			chatService: { handleSettingsChanged: vi.fn() },
+			aiConflictResolverService: { refresh: vi.fn() },
+			scheduledSyncService: { updateInterval: vi.fn() },
+			settingTab: { rerenderIfVisible: vi.fn() },
+		} as unknown as NutstorePlugin
+		const service = new SettingsService(plugin)
+		vi.spyOn(service, 'loadLocalSettings').mockResolvedValue()
+
+		const firstPersistence = service.persistSettings({ account: 'first' })
+		await vi.waitFor(() => expect(saveData).toHaveBeenCalledOnce())
+		const reload = service.reloadSettingsFromDisk()
+		const secondPersistence = service.persistSettings({ account: 'second' })
+
+		await Promise.resolve()
+		expect(loadData).not.toHaveBeenCalled()
+		const firstRejection = expect(firstPersistence).rejects.toThrow('disk full')
+		firstWrite.reject(new Error('disk full'))
+		await firstRejection
+		await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(2))
+		expect(loadData).not.toHaveBeenCalled()
+
+		secondWrite.resolve()
+		await Promise.all([secondPersistence, reload])
+
+		expect(loadData).toHaveBeenCalledOnce()
+	})
+
+	it('discards a stale disk read when persistence starts during reload', async () => {
+		const staleRead = createDeferred<Partial<NutstoreSettings>>()
+		let diskSettings: Partial<NutstoreSettings> = {
+			...DEFAULT_SETTINGS,
+			account: 'disk-before-reload',
+		}
+		const loadData = vi
+			.fn()
+			.mockImplementationOnce(() => staleRead.promise)
+			.mockImplementation(async () => ({ ...diskSettings }))
+		const saveData = vi.fn(async (settings: NutstoreSettings) => {
+			diskSettings = { ...settings }
+		})
+		const plugin = {
+			app: { vault: { configDir: '.obsidian', adapter: {} } },
+			settings: { ...DEFAULT_SETTINGS, account: 'runtime-before-reload' },
+			loadData,
+			saveData,
+			modelsPresetService: { initializeFromLocalSettings: vi.fn() },
+			nutstoreLlmGatewayService: {
+				initializeProviderFromStoredAuth: vi.fn(),
+			},
+			i18nService: { update: vi.fn() },
+			chatService: { handleSettingsChanged: vi.fn() },
+			aiConflictResolverService: { refresh: vi.fn() },
+			scheduledSyncService: { updateInterval: vi.fn() },
+			settingTab: { rerenderIfVisible: vi.fn() },
+		} as unknown as NutstorePlugin
+		const service = new SettingsService(plugin)
+		vi.spyOn(service, 'loadLocalSettings').mockResolvedValue()
+
+		const reload = service.reloadSettingsFromDisk()
+		await vi.waitFor(() => expect(loadData).toHaveBeenCalledOnce())
+		plugin.settings.account = 'local-edit'
+		await service.persistSettings()
+
+		staleRead.resolve({
+			...DEFAULT_SETTINGS,
+			account: 'stale-disk-read',
+		})
+		await reload
+
+		expect(loadData).toHaveBeenCalledTimes(2)
+		expect(saveData).toHaveBeenCalledOnce()
+		expect(diskSettings.account).toBe('local-edit')
+		expect(plugin.settings.account).toBe('local-edit')
 	})
 })

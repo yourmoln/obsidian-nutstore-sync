@@ -37,15 +37,18 @@ function utf8ByteLength(value: string) {
 	return UTF8_ENCODER.encode(value).byteLength
 }
 
+function canonicalCaseFold(value: string) {
+	return value.normalize('NFC').toLowerCase().toUpperCase().normalize('NFC')
+}
+
 function normalizeComparablePath(value: string) {
 	return value
 		.trim()
 		.replace(/\\/g, '/')
 		.split('/')
-		.map((segment) => segment.trim().normalize('NFC'))
+		.map((segment) => canonicalCaseFold(segment.trim()))
 		.filter((segment) => segment && segment !== '.')
 		.join('/')
-		.toLowerCase()
 }
 
 function isInsideConfigDirectory(path: string, configDir?: string | null) {
