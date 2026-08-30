@@ -170,6 +170,18 @@ export default class CommonSettings extends BaseSettings {
 			)
 
 		new Setting(this.containerEl)
+			.setName(i18n.t('settings.showSyncResultModal.name'))
+			.setDesc(i18n.t('settings.showSyncResultModal.desc'))
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.showSyncResultModal)
+					.onChange(async (value) => {
+						this.plugin.settings.showSyncResultModal = value
+						await this.plugin.settingsService.saveSettings()
+					}),
+			)
+
+		new Setting(this.containerEl)
 			.setName(i18n.t('settings.confirmBeforeDeleteInAutoSync.name'))
 			.setDesc(i18n.t('settings.confirmBeforeDeleteInAutoSync.desc'))
 			.addToggle((toggle) =>

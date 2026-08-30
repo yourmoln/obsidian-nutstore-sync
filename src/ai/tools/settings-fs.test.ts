@@ -22,6 +22,7 @@ function makeSettings(): NutstoreSettings {
 		oauthResponseText: '',
 		loginMode: 'sso',
 		confirmBeforeSync: true,
+		showSyncResultModal: true,
 		confirmBeforeDeleteInAutoSync: true,
 		syncMode: 'loose' as NutstoreSettings['syncMode'],
 		filterRules: {

@@ -64,7 +64,9 @@ export class ProgressService extends BaseService {
 				if (failedCount === 0 && this.progressModal) {
 					const noChanges = this.syncProgress.total === 0
 					this.closeProgressModal()
-					this.showResultModal(noChanges)
+					if (this.plugin.settings.showSyncResultModal !== false) {
+						this.showResultModal(noChanges)
+					}
 					return
 				}
 				this.updateModal()

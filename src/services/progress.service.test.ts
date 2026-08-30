@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { emitEndSync, emitPreparingSync, emitSyncProgress } from '../events'
+import {
+	emitEndSync,
+	emitPreparingSync,
+	emitSyncCancelled,
+	emitSyncProgress,
+} from '../events'
 import { ProgressService } from './progress.service'
 
 const modal = vi.hoisted(() => ({
@@ -34,10 +39,18 @@ vi.mock('obsidian', () => ({
 
 describe('ProgressService completion', () => {
 	let service: ProgressService
+	let plugin: {
+		isSyncing: boolean
+		settings: { showSyncResultModal?: boolean }
+	}
 
 	beforeEach(() => {
 		vi.clearAllMocks()
-		service = new ProgressService({ isSyncing: true } as never)
+		plugin = {
+			isSyncing: true,
+			settings: {},
+		}
+		service = new ProgressService(plugin as never)
 		service.onload()
 	})
 
@@ -45,7 +58,7 @@ describe('ProgressService completion', () => {
 		service.onunload()
 	})
 
-	it('replaces visible zero-task progress with a success result', () => {
+	it('shows a success result by default for visible zero-task progress', () => {
 		emitPreparingSync({ showNotice: true })
 		service.showProgressModal()
 
@@ -88,7 +101,30 @@ describe('ProgressService completion', () => {
 		expect(resultModal.open).toHaveBeenCalledOnce()
 	})
 
-	it('keeps failed completion in the progress modal with its failure count', async () => {
+	it('suppresses a successful result when the setting is disabled', () => {
+		plugin.settings.showSyncResultModal = false
+		emitPreparingSync({ showNotice: true })
+		service.showProgressModal()
+
+		emitEndSync({ showNotice: true, failedCount: 0 })
+
+		expect(modal.close).toHaveBeenCalledOnce()
+		expect(resultModal.open).not.toHaveBeenCalled()
+	})
+
+	it('still closes visible progress on cancellation when results are disabled', () => {
+		plugin.settings.showSyncResultModal = false
+		emitPreparingSync({ showNotice: true })
+		service.showProgressModal()
+
+		emitSyncCancelled()
+
+		expect(modal.close).toHaveBeenCalledOnce()
+		expect(resultModal.open).not.toHaveBeenCalled()
+	})
+
+	it('keeps failed completion visible when success results are disabled', async () => {
+		plugin.settings.showSyncResultModal = false
 		emitPreparingSync({ showNotice: true })
 		service.showProgressModal()
 

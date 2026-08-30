@@ -1449,6 +1449,7 @@ describe('apply_patch against the virtual settings file', () => {
 			oauthResponseText: '',
 			loginMode: 'sso',
 			confirmBeforeSync: true,
+			showSyncResultModal: true,
 			confirmBeforeDeleteInAutoSync: true,
 			syncMode: 'loose' as NutstoreSettings['syncMode'],
 			filterRules: {
@@ -1604,6 +1605,7 @@ describe('apply_patch across the mountable filesystem', () => {
 			oauthResponseText: '',
 			loginMode: 'sso',
 			confirmBeforeSync: true,
+			showSyncResultModal: true,
 			confirmBeforeDeleteInAutoSync: true,
 			syncMode: 'loose' as NutstoreSettings['syncMode'],
 			filterRules: { rules: [] },
