@@ -76,6 +76,10 @@
 			"name": "Confirm before sync",
 			"desc": "Show pending tasks and execute after confirmation"
 		},
+		"showSyncResultModal": {
+			"name": "Show successful sync result",
+			"desc": "Show a result dialog after a sync completes successfully"
+		},
 		"confirmBeforeDeleteInAutoSync": {
 			"name": "Confirm before deleting files during auto-sync",
 			"desc": "Show a confirmation dialog when local files are about to be deleted during auto-sync, allowing you to choose to delete or re-upload them"
@@ -468,6 +472,9 @@
 				},
 				"confirmBeforeSync": {
 					"name": "Confirm before manual sync"
+				},
+				"showSyncResultModal": {
+					"name": "Show successful sync result"
 				},
 				"confirmBeforeDeleteInAutoSync": {
 					"name": "Confirm before auto delete"

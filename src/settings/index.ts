@@ -134,6 +134,7 @@ export interface NutstoreSettings {
 	oauthResponseText: string
 	loginMode: 'manual' | 'sso'
 	confirmBeforeSync: boolean
+	showSyncResultModal: boolean
 	confirmBeforeDeleteInAutoSync: boolean
 	syncMode: SyncMode
 	filterRules: {
@@ -175,6 +176,7 @@ export const DEFAULT_SETTINGS: NutstoreSettings = {
 	oauthResponseText: '',
 	loginMode: 'sso',
 	confirmBeforeSync: true,
+	showSyncResultModal: true,
 	confirmBeforeDeleteInAutoSync: true,
 	syncMode: SyncMode.LOOSE,
 	filterRules: {

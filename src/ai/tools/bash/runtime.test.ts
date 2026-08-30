@@ -1160,6 +1160,7 @@ describe('settings virtual file through bash', () => {
 			oauthResponseText: '',
 			loginMode: 'sso',
 			confirmBeforeSync: true,
+			showSyncResultModal: true,
 			confirmBeforeDeleteInAutoSync: true,
 			syncMode: 'loose' as NutstoreSettings['syncMode'],
 			filterRules: {
