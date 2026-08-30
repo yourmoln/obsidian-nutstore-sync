@@ -9,6 +9,8 @@ import type { NutstoreLlmGatewayAuthSettings } from '~/services/nutstore-llm-gat
 import { ConflictStrategy } from '~/sync/tasks/conflict-resolve.task'
 import { DEFAULT_MOBILE_APP_DOWNLOAD_FILE_CHUNK_SIZE } from '~/utils/download-chunk-size'
 import { GlobFilterRule } from '~/utils/glob-match'
+import logger from '~/utils/logger'
+import { DEFAULT_LOG_DIRECTORY } from '~/utils/log-note'
 import AccountSettings from './account'
 import AISettings from './ai'
 import CommonSettings from './common'
@@ -154,6 +156,7 @@ export interface NutstoreSettings {
 		nutstoreLlmGateway?: NutstoreLlmGatewayAuthSettings
 	}
 	configDirSyncMode?: 'none' | 'bookmarks' | 'all'
+	logDirectory: string
 }
 
 function exclude(expr: string): GlobFilterRule {
@@ -222,6 +225,7 @@ export const DEFAULT_SETTINGS: NutstoreSettings = {
 		nutstoreLlmGateway: {},
 	},
 	configDirSyncMode: 'none',
+	logDirectory: DEFAULT_LOG_DIRECTORY,
 }
 
 export interface NutstoreLocalSettings {
@@ -383,9 +387,13 @@ export class NutstoreSettingTab extends PluginSettingTab {
 		await this.display()
 	}
 
-	async onClose() {
-		await this.accountSettings.hide()
-		this.troubleshootingSettings.hide()
+	hide() {
+		void Promise.all([
+			this.accountSettings.hide(),
+			this.troubleshootingSettings.hide(),
+		]).catch((error) => {
+			logger.error('Failed to hide settings tab:', error)
+		})
 	}
 
 	unload() {

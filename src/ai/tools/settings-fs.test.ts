@@ -43,6 +43,7 @@ function makeSettings(): NutstoreSettings {
 			providers: {},
 		},
 		configDirSyncMode: 'none',
+		logDirectory: 'nutstore-sync/logs',
 	}
 }
 

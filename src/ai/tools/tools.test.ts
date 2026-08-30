@@ -1468,6 +1468,7 @@ describe('apply_patch against the virtual settings file', () => {
 			language: undefined,
 			ai: { providers: {} },
 			configDirSyncMode: 'none',
+			logDirectory: 'nutstore-sync/logs',
 		}
 	}
 
@@ -1615,6 +1616,7 @@ describe('apply_patch across the mountable filesystem', () => {
 			language: undefined,
 			ai: { providers: {} },
 			configDirSyncMode: 'none',
+			logDirectory: 'nutstore-sync/logs',
 		}
 	}
 
