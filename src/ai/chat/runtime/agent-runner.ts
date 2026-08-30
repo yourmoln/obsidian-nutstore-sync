@@ -20,6 +20,7 @@ import { buildAgentSystemPrompt } from '~/ai/chat/prompts'
 import { AgentEventProjector } from '~/ai/chat/runtime/agent-event-projector'
 import type { SessionRuntimeState } from '~/ai/chat/runtime/chat-state'
 import { resolveSummaryContext } from '~/ai/chat/runtime/context-compression'
+import { resolveMaxOutputTokens } from '~/ai/chat/runtime/inference-options'
 import type { ToolExecutor } from '~/ai/chat/runtime/tool-executor'
 import type { SessionStore } from '~/ai/chat/session/session-store'
 import type { ChatAgentState, ChatMessageMeta } from '~/ai/chat/types'
@@ -195,7 +196,10 @@ export class AgentRunner {
 			toolsContext,
 			stopWhen: [isLoopFinished(), repeatedToolCalls, suspendAtStepBoundary],
 			temperature: session.inferenceParams?.temperature,
-			maxOutputTokens: session.inferenceParams?.maxTokens,
+			maxOutputTokens: resolveMaxOutputTokens(
+				session.inferenceParams?.maxTokens,
+				options.model.limit?.output,
+			),
 			prepareStep: async ({ messages, steps }) => {
 				readTracker.resetSnapshot()
 				await projector.project({ type: 'step-start' })

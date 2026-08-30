@@ -252,6 +252,40 @@ describe('context compression', () => {
 		)
 	})
 
+	it('uses the configured model output limit by default', async () => {
+		const master = createEmptyMasterAgent(1)
+		master.timeline = [message('u1', 'user', 1)]
+		const session: ChatSession = {
+			schemaVersion: 2,
+			id: 'session',
+			createdAt: 1,
+			updatedAt: 1,
+			subagents: { master },
+		}
+		const store = {
+			upsertSessionIndexItem: vi.fn(),
+			persistSession: vi.fn(async () => undefined),
+			persistMetaAndIndex: vi.fn(async () => undefined),
+		}
+		const factory = new MessageFactory({} as never, {} as never, vi.fn())
+
+		await runContextCompression({
+			provider: {} as never,
+			model: {
+				id: 'model',
+				limit: { context: 1_000_000, output: 384_000 },
+			} as never,
+			session,
+			agent: master,
+			store: store as never,
+			messageFactory: factory,
+		})
+
+		expect(generateText).toHaveBeenCalledWith(
+			expect.objectContaining({ maxOutputTokens: 384_000 }),
+		)
+	})
+
 	it('keeps the compaction instruction as a separate final user message', async () => {
 		const master = createEmptyMasterAgent(1)
 		master.timeline = [
