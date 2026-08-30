@@ -5,7 +5,7 @@ export const DEFAULT_LOG_DIRECTORY = 'nutstore-sync/logs'
 
 const WINDOWS_FORBIDDEN_PATH_CHARACTERS = /[<>:"|?*]/
 const WINDOWS_RESERVED_DEVICE_NAME =
-	/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i
+	/^(?:con|prn|aux|nul|(?:com|lpt)[1-9\u00b9\u00b2\u00b3])(?:\.|$)/i
 
 function isAbsolutePath(path: string) {
 	return path.startsWith('/') || /^[A-Za-z]:/.test(path)

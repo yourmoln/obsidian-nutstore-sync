@@ -61,6 +61,11 @@ describe('normalizeLogDirectory', () => {
 		['trailing space', 'support/logs /archive'],
 		['reserved device name', 'support/CON'],
 		['reserved device name with extension', 'support/lpt9.logs'],
+		['superscript reserved device name', 'support/COM\u00b9'],
+		[
+			'superscript reserved device name with extension',
+			'support/LPT\u00b2.logs',
+		],
 	] as const)('rejects a Windows-invalid %s: %s', (_reason, value) => {
 		expect(normalizeLogDirectory(value)).toBe(DEFAULT_LOG_DIRECTORY)
 	})
