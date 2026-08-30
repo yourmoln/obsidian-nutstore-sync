@@ -27,7 +27,7 @@ export default class TroubleshootingSettings extends BaseSettings {
 	async display() {
 		const previousText = this.logDirectoryText
 		if (previousText && this.logDirectoryDraftDirty) {
-			void this.commitLogDirectory(previousText)
+			void this.flushLogDirectoryDraft(previousText)
 		}
 		this.logDirectoryText = undefined
 		this.logDirectoryDraftDirty = false
@@ -102,7 +102,7 @@ export default class TroubleshootingSettings extends BaseSettings {
 					})
 				text.inputEl.addEventListener('blur', () => {
 					if (this.logDirectoryText === text) {
-						void this.commitLogDirectory(text)
+						void this.flushLogDirectoryDraft(text)
 					}
 				})
 			})
@@ -153,13 +153,25 @@ export default class TroubleshootingSettings extends BaseSettings {
 	async hide() {
 		const text = this.logDirectoryText
 		if (text && this.logDirectoryDraftDirty) {
-			void this.commitLogDirectory(text)
+			void this.flushLogDirectoryDraft(text)
 		}
 		await this.waitForLogDirectoryCommits()
 		if (this.logDirectoryText === text) {
 			this.logDirectoryText = undefined
 			this.logDirectoryDraftDirty = false
 		}
+	}
+
+	private flushLogDirectoryDraft(text: TextComponent) {
+		if (this.logDirectoryText !== text || !this.logDirectoryDraftDirty) {
+			return this.logDirectoryCommitQueue
+		}
+		if (this.pendingLogDirectoryCommits === 0) {
+			const latestPersistedDirectory = this.plugin.settings.logDirectory
+			this.lastPersistedLogDirectory = latestPersistedDirectory
+			this.latestRequestedLogDirectory = latestPersistedDirectory
+		}
+		return this.commitLogDirectory(text)
 	}
 
 	private commitLogDirectory(text: TextComponent) {
@@ -231,7 +243,7 @@ export default class TroubleshootingSettings extends BaseSettings {
 		try {
 			const text = this.logDirectoryText
 			if (text && this.logDirectoryDraftDirty) {
-				void this.commitLogDirectory(text)
+				void this.flushLogDirectoryDraft(text)
 			}
 			await this.waitForLogDirectoryCommits()
 			const timestamp = new Date().toISOString().replace(/[:.]/g, '-')

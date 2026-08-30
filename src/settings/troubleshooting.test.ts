@@ -332,6 +332,50 @@ describe('TroubleshootingSettings log notes', () => {
 		expect(create.mock.calls[0][0]).toMatch(/^notes\/logs\/nutstore-logs-/)
 	})
 
+	it('uses the reloaded directory when a save-to-note draft commit fails', async () => {
+		const persistSettings = vi.fn().mockRejectedValue(new Error('disk full'))
+		const create = vi.fn().mockResolvedValue({ path: 'remote/logs/log.md' })
+		const app = {
+			vault: {
+				configDir: '.obsidian',
+				adapter: {
+					exists: vi.fn().mockResolvedValue(true),
+					mkdir: vi.fn(),
+				},
+				create,
+			},
+			workspace: {
+				getLeaf: () => ({ openFile: vi.fn() }),
+			},
+		}
+		const plugin = {
+			settings: { logDirectory: 'support/logs' },
+			settingsService: { persistSettings },
+			loggerService: { logs: [], clear: vi.fn() },
+			manifest: { version: 'test' },
+		}
+		const section = new TroubleshootingSettings(
+			app as never,
+			plugin as never,
+			{} as never,
+			{ empty: vi.fn() } as never,
+		)
+
+		await section.display()
+		await ui.textComponents[0].change('draft/logs')
+		plugin.settings.logDirectory = 'remote/logs'
+
+		await (
+			section as unknown as { saveLogsToNote(): Promise<void> }
+		).saveLogsToNote()
+
+		expect(persistSettings).toHaveBeenCalledWith({
+			logDirectory: 'draft/logs',
+		})
+		expect(plugin.settings.logDirectory).toBe('remote/logs')
+		expect(create.mock.calls[0][0]).toMatch(/^remote\/logs\/nutstore-logs-/)
+	})
+
 	it('serializes rapid successful blur commits in submission order', async () => {
 		const firstSave = createDeferred()
 		const secondSave = createDeferred()
@@ -443,6 +487,24 @@ describe('TroubleshootingSettings log notes', () => {
 		expect(plugin.settings.logDirectory).toBe('notes/logs')
 	})
 
+	it('uses the reloaded directory when a draft commit on hide fails', async () => {
+		const persistSettings = vi.fn().mockRejectedValue(new Error('disk full'))
+		const { plugin, section } = createSettingsSection(persistSettings)
+
+		await section.display()
+		const text = ui.textComponents[0]
+		await text.change('draft/logs')
+		plugin.settings.logDirectory = 'remote/logs'
+
+		await section.hide()
+
+		expect(persistSettings).toHaveBeenCalledWith({
+			logDirectory: 'draft/logs',
+		})
+		expect(plugin.settings.logDirectory).toBe('remote/logs')
+		expect(text.getValue()).toBe('remote/logs')
+	})
+
 	it('commits the current edit before a programmatic rerender', async () => {
 		const { persistSettings, plugin, section } = createSettingsSection()
 
@@ -454,6 +516,45 @@ describe('TroubleshootingSettings log notes', () => {
 		expect(persistSettings).toHaveBeenCalledOnce()
 		expect(plugin.settings.logDirectory).toBe('notes/logs')
 		expect(ui.textComponents.at(-1)?.getValue()).toBe('notes/logs')
+	})
+
+	it('submits a dirty old value after the directory is reloaded', async () => {
+		const { persistSettings, plugin, section } = createSettingsSection()
+
+		await section.display()
+		await ui.textComponents[0].change('temporary/logs')
+		await ui.textComponents[0].change('support/logs')
+		plugin.settings.logDirectory = 'remote/logs'
+
+		await section.display()
+		await section.hide()
+
+		expect(persistSettings).toHaveBeenCalledOnce()
+		expect(persistSettings).toHaveBeenCalledWith({
+			logDirectory: 'support/logs',
+		})
+		expect(plugin.settings.logDirectory).toBe('support/logs')
+		expect(ui.textComponents.at(-1)?.getValue()).toBe('support/logs')
+	})
+
+	it('uses the reloaded directory when a rerendered draft commit fails', async () => {
+		const pendingSave = createDeferred()
+		const persistSettings = vi.fn(() => pendingSave.promise)
+		const { plugin, section } = createSettingsSection(persistSettings)
+
+		await section.display()
+		await ui.textComponents[0].change('draft/logs')
+		plugin.settings.logDirectory = 'remote/logs'
+		await section.display()
+		const replacementText = ui.textComponents.at(-1)
+		expect(replacementText?.getValue()).toBe('draft/logs')
+
+		pendingSave.reject(new Error('disk full'))
+		await section.hide()
+
+		expect(plugin.settings.logDirectory).toBe('remote/logs')
+		expect(replacementText?.getValue()).toBe('remote/logs')
+		expect(ui.notices).toContain('settings.log.directorySaveError')
 	})
 
 	it('rolls back the visible replacement input after a rerendered save fails', async () => {
