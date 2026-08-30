@@ -11,17 +11,21 @@ function createMockVault() {
 	const createFolder = vi.fn(async (path: string) => {
 		folders.add(path)
 	})
+	const mkdir = vi.fn(async (path: string) => {
+		folders.add(path)
+	})
 	const create = vi.fn(async (path: string) => ({ path }))
 	const vault = {
 		configDir: '.obsidian',
 		adapter: {
 			exists: vi.fn(async (path: string) => folders.has(path)),
+			mkdir,
 		},
 		createFolder,
 		create,
 	} as unknown as Vault
 
-	return { vault, create, createFolder }
+	return { vault, create, createFolder, mkdir }
 }
 
 describe('normalizeLogDirectory', () => {
@@ -36,6 +40,7 @@ describe('normalizeLogDirectory', () => {
 		expect(normalizeLogDirectory(' notes\\support//./logs/ ')).toBe(
 			'notes/support/logs',
 		)
+		expect(normalizeLogDirectory(' support/logs ')).toBe('support/logs')
 	})
 
 	it.each([
@@ -48,6 +53,24 @@ describe('normalizeLogDirectory', () => {
 	])('falls back instead of accepting an unsafe path: %s', (value) => {
 		expect(normalizeLogDirectory(value)).toBe(DEFAULT_LOG_DIRECTORY)
 	})
+
+	it.each([
+		['forbidden character', 'support/logs?'],
+		['control character', 'support/\u0001logs'],
+		['trailing dot', 'support/logs.'],
+		['trailing space', 'support/logs /archive'],
+		['reserved device name', 'support/CON'],
+		['reserved device name with extension', 'support/lpt9.logs'],
+	] as const)('rejects a Windows-invalid %s: %s', (_reason, value) => {
+		expect(normalizeLogDirectory(value)).toBe(DEFAULT_LOG_DIRECTORY)
+	})
+
+	it.each(['.logs', '.obsidian/logs', 'support/.logs'])(
+		'rejects a hidden or config directory segment: %s',
+		(value) => {
+			expect(normalizeLogDirectory(value)).toBe(DEFAULT_LOG_DIRECTORY)
+		},
+	)
 })
 
 describe('saveLogNote', () => {
@@ -96,4 +119,19 @@ describe('saveLogNote', () => {
 			'content',
 		)
 	})
+
+	it.each(['support/CON', '.obsidian/logs'])(
+		'keeps an invalid directory out of adapter-only paths: %s',
+		async (directory) => {
+			const { vault, create, mkdir } = createMockVault()
+
+			await saveLogNote(vault, directory, 'log.md', 'content')
+
+			expect(mkdir).not.toHaveBeenCalled()
+			expect(create).toHaveBeenCalledWith(
+				`${DEFAULT_LOG_DIRECTORY}/log.md`,
+				'content',
+			)
+		},
+	)
 })

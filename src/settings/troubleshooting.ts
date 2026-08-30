@@ -1,4 +1,4 @@
-import { Notice, Setting } from 'obsidian'
+import { Notice, Setting, type TextComponent } from 'obsidian'
 import { isNotNil } from 'ramda'
 import CacheClearModal from '~/components/CacheClearModal'
 import { IN_DEV } from '~/consts'
@@ -73,10 +73,9 @@ export default class TroubleshootingSettings extends BaseSettings {
 				text
 					.setPlaceholder(DEFAULT_LOG_DIRECTORY)
 					.setValue(this.plugin.settings.logDirectory)
-					.onChange(async (value) => {
-						this.plugin.settings.logDirectory = normalizeLogDirectory(value)
-						await this.plugin.settingsService.saveSettings()
-					})
+				text.inputEl.addEventListener('blur', () =>
+					this.commitLogDirectory(text),
+				)
 			})
 
 		new Setting(this.containerEl)
@@ -123,6 +122,15 @@ export default class TroubleshootingSettings extends BaseSettings {
 	}
 
 	hide() {}
+
+	private async commitLogDirectory(text: TextComponent) {
+		const directory = normalizeLogDirectory(text.getValue())
+		text.setValue(directory)
+		if (directory === this.plugin.settings.logDirectory) return
+
+		this.plugin.settings.logDirectory = directory
+		await this.plugin.settingsService.saveSettings()
+	}
 
 	private get logs() {
 		return this.plugin.loggerService.logs
