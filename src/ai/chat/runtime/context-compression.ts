@@ -10,6 +10,7 @@ import {
 } from '~/ai/chat/messages/ui-message'
 import { buildAgentSystemPrompt, COMPRESSION_PROMPT } from '~/ai/chat/prompts'
 import type { ToolExecutor } from '~/ai/chat/runtime/tool-executor'
+import { resolveMaxOutputTokens } from '~/ai/chat/runtime/inference-options'
 import type { SessionStore } from '~/ai/chat/session/session-store'
 import type { AppUIMessage, ChatAgentState } from '~/ai/chat/types'
 import {
@@ -214,7 +215,10 @@ export async function runContextCompression({
 		messages: summarizerMessages,
 		abortSignal,
 		temperature: session.inferenceParams?.temperature,
-		maxOutputTokens: session.inferenceParams?.maxTokens,
+		maxOutputTokens: resolveMaxOutputTokens(
+			session.inferenceParams?.maxTokens,
+			model.limit?.output,
+		),
 	})
 	if (isCancelled?.()) return
 	const summary = response.text.trim() || COMPRESSION_PROMPT
