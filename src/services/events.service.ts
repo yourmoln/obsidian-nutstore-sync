@@ -68,7 +68,13 @@ export default class EventsService extends BaseService {
 				this.plugin.toggleSyncUI(false)
 				const now = Date.now()
 				this.plugin.statusService.setLastSyncTime(now, failedCount)
-				if (showNotice && !this.plugin.progressService.hasVisibleSyncModal()) {
+				const shouldShowCompletionNotice =
+					failedCount > 0 || this.plugin.settings.showSyncResultModal !== false
+				if (
+					showNotice &&
+					shouldShowCompletionNotice &&
+					!this.plugin.progressService.hasVisibleSyncModal()
+				) {
 					const text =
 						failedCount > 0
 							? i18n.t('sync.completeWithFailed', { failedCount })

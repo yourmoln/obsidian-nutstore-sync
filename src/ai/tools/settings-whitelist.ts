@@ -28,6 +28,7 @@ export type SettingsWhitelistFile = {
 	autoSyncIntervalSeconds?: number
 	realtimeSync?: boolean
 	confirmBeforeSync?: boolean
+	showSyncResultModal?: boolean
 	confirmBeforeDeleteInAutoSync?: boolean
 	syncMode?: NutstoreSettings['syncMode']
 	conflictStrategy?: NutstoreSettings['conflictStrategy']
@@ -42,6 +43,7 @@ export type NormalizedSettingsPatch = {
 	autoSyncIntervalSeconds?: number
 	realtimeSync?: boolean
 	confirmBeforeSync?: boolean
+	showSyncResultModal?: boolean
 	confirmBeforeDeleteInAutoSync?: boolean
 	syncMode?: NutstoreSettings['syncMode']
 	conflictStrategy?: NutstoreSettings['conflictStrategy']
@@ -74,6 +76,9 @@ export function applyNormalizedSettingsPatch(
 	}
 	if (patch.confirmBeforeSync !== undefined) {
 		settings.confirmBeforeSync = patch.confirmBeforeSync
+	}
+	if (patch.showSyncResultModal !== undefined) {
+		settings.showSyncResultModal = patch.showSyncResultModal
 	}
 	if (patch.confirmBeforeDeleteInAutoSync !== undefined) {
 		settings.confirmBeforeDeleteInAutoSync = patch.confirmBeforeDeleteInAutoSync
@@ -116,6 +121,7 @@ const WHITELIST_KEYS = new Set([
 	'autoSyncIntervalSeconds',
 	'realtimeSync',
 	'confirmBeforeSync',
+	'showSyncResultModal',
 	'confirmBeforeDeleteInAutoSync',
 	'syncMode',
 	'conflictStrategy',
@@ -355,6 +361,7 @@ export function parseSettingsWhitelistJson(text: string): SettingsParseResult {
 	for (const key of [
 		'realtimeSync',
 		'confirmBeforeSync',
+		'showSyncResultModal',
 		'confirmBeforeDeleteInAutoSync',
 	] as const) {
 		if (isNil(parsed[key])) {
@@ -442,6 +449,7 @@ export function serializeSettingsWhitelist(settings: NutstoreSettings): string {
 		autoSyncIntervalSeconds: settings.autoSyncIntervalSeconds,
 		realtimeSync: settings.realtimeSync,
 		confirmBeforeSync: settings.confirmBeforeSync,
+		showSyncResultModal: settings.showSyncResultModal,
 		confirmBeforeDeleteInAutoSync: settings.confirmBeforeDeleteInAutoSync,
 		syncMode: settings.syncMode,
 		conflictStrategy: settings.conflictStrategy,
@@ -501,6 +509,11 @@ export function describeSettingsPatch(
 	if (patch.confirmBeforeSync !== undefined) {
 		lines.push(
 			`${i18n.t('aiPermission.settings.fields.confirmBeforeSync.name')}: ${i18n.t(patch.confirmBeforeSync ? 'aiPermission.settings.on' : 'aiPermission.settings.off')}`,
+		)
+	}
+	if (patch.showSyncResultModal !== undefined) {
+		lines.push(
+			`${i18n.t('aiPermission.settings.fields.showSyncResultModal.name')}: ${i18n.t(patch.showSyncResultModal ? 'aiPermission.settings.on' : 'aiPermission.settings.off')}`,
 		)
 	}
 	if (patch.confirmBeforeDeleteInAutoSync !== undefined) {

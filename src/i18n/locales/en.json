@@ -473,6 +473,9 @@
 				"confirmBeforeSync": {
 					"name": "Confirm before manual sync"
 				},
+				"showSyncResultModal": {
+					"name": "Show successful sync result"
+				},
 				"confirmBeforeDeleteInAutoSync": {
 					"name": "Confirm before auto delete"
 				},

@@ -4,6 +4,7 @@ import { SETTINGS_MOUNT_POINT } from './bash/mount-points'
 import { SettingsFs } from './settings-fs'
 import {
 	applyNormalizedSettingsPatch,
+	describeSettingsPatch,
 	parseSettingsWhitelistJson,
 	serializeSettingsWhitelist,
 } from './settings-whitelist'
@@ -84,6 +85,7 @@ describe('serializeSettingsWhitelist', () => {
 		})
 		expect(file.skipLargeFiles).toEqual({ maxSize: '30 MB' })
 		expect(file.syncMode).toBe('loose')
+		expect(file.showSyncResultModal).toBe(true)
 	})
 
 	it('round-trips through the parser without lossy changes', () => {
@@ -95,6 +97,38 @@ describe('serializeSettingsWhitelist', () => {
 		if (!result.ok) return
 		expect(result.patch.skipLargeFilesMaxSize).toBe('30 MB')
 		expect(result.patch.filterRules?.[0]?.expr).toBe('**/.DS_Store')
+		expect(result.patch.showSyncResultModal).toBe(true)
+	})
+
+	it('parses, applies, and describes the successful result toggle', () => {
+		const result = parseSettingsWhitelistJson(
+			JSON.stringify({ showSyncResultModal: false }),
+		)
+		expect(result).toEqual({
+			ok: true,
+			patch: { showSyncResultModal: false },
+			text: JSON.stringify({ showSyncResultModal: false }),
+		})
+		if (!result.ok) return
+
+		const settings = makeSettings()
+		applyNormalizedSettingsPatch(settings, result.patch)
+
+		expect(settings.showSyncResultModal).toBe(false)
+		expect(describeSettingsPatch(result.patch)).toEqual([
+			'Show successful sync result: off',
+		])
+	})
+
+	it('rejects a non-boolean successful result toggle', () => {
+		const result = parseSettingsWhitelistJson(
+			JSON.stringify({ showSyncResultModal: 'no' }),
+		)
+
+		expect(result).toMatchObject({ ok: false })
+		if (result.ok) return
+		expect(result.error).toContain("'showSyncResultModal'")
+		expect(result.error).toContain('boolean')
 	})
 
 	it('serializes and round-trips a disabled rule', () => {
