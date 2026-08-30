@@ -1,4 +1,4 @@
-import { debounce } from 'lodash-es'
+import { cloneDeep, debounce } from 'lodash-es'
 import { normalizePath, Notice } from 'obsidian'
 import {
 	sanitizeDefaultSelections,
@@ -19,12 +19,13 @@ import { ConflictStrategy } from '~/sync/tasks/conflict-resolve.task'
 import { DEFAULT_MOBILE_APP_DOWNLOAD_FILE_CHUNK_SIZE } from '~/utils/download-chunk-size'
 import { migrateLegacyFilterRules } from '~/utils/glob-match'
 import logger from '~/utils/logger'
-import { normalizeLogDirectory } from '~/utils/log-note'
+import { normalizeLogDirectoryForVault } from '~/utils/log-note'
 import { BaseService } from './service.interface'
 import type NutstorePlugin from '..'
 
 export default class SettingsService extends BaseService {
 	private reloadSettingsPromise: Promise<void> | null = null
+	private settingsPersistenceQueue: Promise<void> = Promise.resolve()
 	private readonly debouncedReloadSettingsFromDisk = debounce(() => {
 		void this.reloadSettingsFromDisk()
 	}, 500)
@@ -67,16 +68,15 @@ export default class SettingsService extends BaseService {
 		// persist only when a legacy split shape actually required migration.
 		this.plugin.settings.filterRules = { rules: migratedFilterRules.rules }
 		if (migratedFilterRules.migrated) {
-			// saveData is used instead of saveSettings to avoid touching
-			// services that may not be initialized during onload.
-			await this.plugin.saveData(this.plugin.settings)
+			// Persist without touching services that may not be initialized on load.
+			await this.persistSettings()
 		}
 		this.plugin.settings.mobileAppDownloadFileChunkSize ||=
 			(this.plugin.settings as { downloadChunkSize?: string })
 				.downloadChunkSize || DEFAULT_MOBILE_APP_DOWNLOAD_FILE_CHUNK_SIZE
-		this.plugin.settings.logDirectory = normalizeLogDirectory(
+		this.plugin.settings.logDirectory = normalizeLogDirectoryForVault(
 			this.plugin.settings.logDirectory,
-			this.plugin.app.vault.configDir,
+			this.plugin.app.vault,
 		)
 		this.plugin.settings.ai ??= {
 			providers: {},
@@ -113,9 +113,23 @@ export default class SettingsService extends BaseService {
 	}
 
 	async saveSettings() {
-		await this.plugin.saveData(this.plugin.settings)
+		await this.persistSettings()
 		await this.plugin.chatService.handleSettingsChanged()
 		await this.plugin.aiConflictResolverService.refresh()
+	}
+
+	/** Serializes data-only writes and merges scoped overrides at execution time. */
+	async persistSettings(overrides: Partial<NutstoreSettings> = {}) {
+		const requestedOverrides = cloneDeep(overrides)
+		const persistence = this.settingsPersistenceQueue.then(async () => {
+			const snapshot = cloneDeep({
+				...this.plugin.settings,
+				...requestedOverrides,
+			})
+			await this.plugin.saveData(snapshot)
+		})
+		this.settingsPersistenceQueue = persistence.catch(() => undefined)
+		return persistence
 	}
 
 	/**
@@ -126,7 +140,7 @@ export default class SettingsService extends BaseService {
 	 */
 	async applySettingsPatch(patch: NormalizedSettingsPatch) {
 		applyNormalizedSettingsPatch(this.plugin.settings, patch)
-		await this.plugin.saveData(this.plugin.settings)
+		await this.persistSettings()
 		await this.plugin.i18nService.update()
 		await this.plugin.chatService.handleSettingsChanged()
 		await this.plugin.aiConflictResolverService.refresh()

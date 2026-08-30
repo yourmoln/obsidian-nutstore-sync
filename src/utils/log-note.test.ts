@@ -2,11 +2,20 @@ import type { Vault } from 'obsidian'
 import { describe, expect, it, vi } from 'vitest'
 import {
 	DEFAULT_LOG_DIRECTORY,
+	MAX_LOG_DIRECTORY_PATH_BYTES,
 	normalizeLogDirectory,
 	saveLogNote,
 } from './log-note'
 
-function createMockVault(configDir = '.obsidian') {
+const EXPECTED_MAX_LOG_FILE_PATH_BYTES = 1024
+const EXPECTED_LOG_FILE_NAME_BYTE_BUDGET = 64
+const EXPECTED_MAX_LOG_DIRECTORY_PATH_BYTES =
+	EXPECTED_MAX_LOG_FILE_PATH_BYTES - EXPECTED_LOG_FILE_NAME_BYTE_BUDGET - 1
+
+function createMockVault(
+	configDir = '.obsidian',
+	getFullPath?: (path: string) => string,
+) {
 	const folders = new Set<string>()
 	const createFolder = vi.fn(async (path: string) => {
 		folders.add(path)
@@ -20,12 +29,24 @@ function createMockVault(configDir = '.obsidian') {
 		adapter: {
 			exists: vi.fn(async (path: string) => folders.has(path)),
 			mkdir,
+			...(getFullPath ? { getFullPath } : {}),
 		},
 		createFolder,
 		create,
 	} as unknown as Vault
 
 	return { vault, create, createFolder, mkdir }
+}
+
+function createAsciiPath(byteLength: number) {
+	const segments: string[] = []
+	let remaining = byteLength
+	while (remaining > 255) {
+		segments.push('a'.repeat(255))
+		remaining -= 256
+	}
+	segments.push('a'.repeat(remaining))
+	return segments.join('/')
 }
 
 describe('normalizeLogDirectory', () => {
@@ -98,6 +119,21 @@ describe('normalizeLogDirectory', () => {
 		)
 	})
 
+	it('treats NFC and NFD config directory spellings as equivalent', () => {
+		const nfcConfigDir = '\u00e9-config'
+		const nfdConfigDir = 'e\u0301-config'
+
+		expect(normalizeLogDirectory(`${nfdConfigDir}/logs`, nfcConfigDir)).toBe(
+			DEFAULT_LOG_DIRECTORY,
+		)
+	})
+
+	it('preserves the user path Unicode representation outside comparisons', () => {
+		const nfdDirectory = 'notes/e\u0301-logs'
+
+		expect(normalizeLogDirectory(nfdDirectory, 'config')).toBe(nfdDirectory)
+	})
+
 	it('accepts path segments at the 255-byte UTF-8 boundary', () => {
 		const asciiPath = 'a'.repeat(255)
 		const multibytePath = '界'.repeat(85)
@@ -114,12 +150,19 @@ describe('normalizeLogDirectory', () => {
 		expect(normalizeLogDirectory(value)).toBe(DEFAULT_LOG_DIRECTORY)
 	})
 
-	it('enforces the 1024-byte normalized directory boundary', () => {
-		const atLimit = Array.from({ length: 5 }, () => 'a'.repeat(204)).join('/')
+	it('reserves the file name budget in the directory boundary', () => {
+		const atLimit = createAsciiPath(EXPECTED_MAX_LOG_DIRECTORY_PATH_BYTES)
 		const overLimit = `${atLimit}a`
+		const budgetedFilePath = `${atLimit}/${'f'.repeat(
+			EXPECTED_LOG_FILE_NAME_BYTE_BUDGET,
+		)}`
 
-		expect(new TextEncoder().encode(atLimit).byteLength).toBe(1024)
-		expect(new TextEncoder().encode(overLimit).byteLength).toBe(1025)
+		expect(MAX_LOG_DIRECTORY_PATH_BYTES).toBe(
+			EXPECTED_MAX_LOG_DIRECTORY_PATH_BYTES,
+		)
+		expect(new TextEncoder().encode(budgetedFilePath).byteLength).toBe(
+			EXPECTED_MAX_LOG_FILE_PATH_BYTES,
+		)
 		expect(normalizeLogDirectory(atLimit)).toBe(atLimit)
 		expect(normalizeLogDirectory(overLimit)).toBe(DEFAULT_LOG_DIRECTORY)
 	})
@@ -206,5 +249,49 @@ describe('saveLogNote', () => {
 
 		expect(mkdir).not.toHaveBeenCalled()
 		expect(create).toHaveBeenCalledWith('nutstore-sync-logs/log.md', 'content')
+	})
+
+	it('rejects a final relative file path over the byte budget', async () => {
+		const { vault, create, createFolder } = createMockVault()
+		const directory = createAsciiPath(EXPECTED_MAX_LOG_DIRECTORY_PATH_BYTES)
+		const oversizedFileName = 'f'.repeat(EXPECTED_LOG_FILE_NAME_BYTE_BUDGET + 1)
+
+		await expect(
+			saveLogNote(vault, directory, oversizedFileName, 'content'),
+		).rejects.toThrow(/path/i)
+		expect(createFolder).not.toHaveBeenCalled()
+		expect(create).not.toHaveBeenCalled()
+	})
+
+	it('falls back when the adapter full path exceeds the byte budget', async () => {
+		const rootPrefix = `${'r'.repeat(200)}/`
+		const { vault, create } = createMockVault(
+			'.obsidian',
+			(path) => `${rootPrefix}${path}`,
+		)
+		const directory = createAsciiPath(
+			EXPECTED_MAX_LOG_DIRECTORY_PATH_BYTES - 100,
+		)
+
+		await saveLogNote(vault, directory, 'log.md', 'content')
+
+		expect(create).toHaveBeenCalledWith(
+			`${DEFAULT_LOG_DIRECTORY}/log.md`,
+			'content',
+		)
+	})
+
+	it('fails before creating folders when even the fallback full path is too long', async () => {
+		const rootPrefix = `${'r'.repeat(EXPECTED_MAX_LOG_FILE_PATH_BYTES)}/`
+		const { vault, create, createFolder } = createMockVault(
+			'.obsidian',
+			(path) => `${rootPrefix}${path}`,
+		)
+
+		await expect(
+			saveLogNote(vault, 'custom/logs', 'log.md', 'content'),
+		).rejects.toThrow(/path/i)
+		expect(createFolder).not.toHaveBeenCalled()
+		expect(create).not.toHaveBeenCalled()
 	})
 })

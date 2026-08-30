@@ -3,9 +3,13 @@ import { mkdirsVault } from './mkdirs-vault'
 
 export const DEFAULT_LOG_DIRECTORY = 'nutstore-sync/logs'
 export const MAX_LOG_DIRECTORY_SEGMENT_BYTES = 255
-export const MAX_LOG_DIRECTORY_PATH_BYTES = 1024
+export const MAX_LOG_FILE_PATH_BYTES = 1024
+export const LOG_FILE_NAME_BYTE_BUDGET = 64
+export const MAX_LOG_DIRECTORY_PATH_BYTES =
+	MAX_LOG_FILE_PATH_BYTES - LOG_FILE_NAME_BYTE_BUDGET - 1
 
 const CONFIG_CONFLICT_LOG_DIRECTORY = 'nutstore-sync-logs'
+const LOG_FILE_NAME_BUDGET_PLACEHOLDER = 'f'.repeat(LOG_FILE_NAME_BYTE_BUDGET)
 const UTF8_ENCODER = new TextEncoder()
 
 const WINDOWS_FORBIDDEN_PATH_CHARACTERS = /[<>:"|?*]/
@@ -38,7 +42,7 @@ function normalizeComparablePath(value: string) {
 		.trim()
 		.replace(/\\/g, '/')
 		.split('/')
-		.map((segment) => segment.trim())
+		.map((segment) => segment.trim().normalize('NFC'))
 		.filter((segment) => segment && segment !== '.')
 		.join('/')
 		.toLowerCase()
@@ -116,15 +120,49 @@ export function normalizeLogDirectory(
 	return normalizedPath
 }
 
+function isLogFilePathWithinBudget(vault: Vault, filePath: string) {
+	if (utf8ByteLength(filePath) > MAX_LOG_FILE_PATH_BYTES) {
+		return false
+	}
+
+	const adapter = vault.adapter as Vault['adapter'] & {
+		getFullPath?: (path: string) => string
+	}
+	if (typeof adapter.getFullPath !== 'function') {
+		return true
+	}
+	try {
+		const fullPath = adapter.getFullPath(filePath)
+		return utf8ByteLength(fullPath) <= MAX_LOG_FILE_PATH_BYTES
+	} catch {
+		// Keep the verifiable relative-path budget when an adapter cannot resolve.
+		return true
+	}
+}
+
+export function normalizeLogDirectoryForVault(value: unknown, vault: Vault) {
+	const directory = normalizeLogDirectory(value, vault.configDir)
+	const budgetedFilePath = `${directory}/${LOG_FILE_NAME_BUDGET_PLACEHOLDER}`
+	if (isLogFilePathWithinBudget(vault, budgetedFilePath)) {
+		return directory
+	}
+	return getDefaultLogDirectory(vault.configDir)
+}
+
 export async function saveLogNote(
 	vault: Vault,
 	directory: string | null | undefined,
 	fileName: string,
 	content: string,
 ) {
-	const dirPath = normalizeLogDirectory(directory, vault.configDir)
-	await mkdirsVault(vault, dirPath)
+	const dirPath = normalizeLogDirectoryForVault(directory, vault)
 	const filePath = `${dirPath}/${fileName}`
+	if (!isLogFilePathWithinBudget(vault, filePath)) {
+		throw new Error(
+			`Log file path exceeds the ${MAX_LOG_FILE_PATH_BYTES}-byte safety budget`,
+		)
+	}
+	await mkdirsVault(vault, dirPath)
 	const file = await vault.create(filePath, content)
 	return { file, filePath }
 }

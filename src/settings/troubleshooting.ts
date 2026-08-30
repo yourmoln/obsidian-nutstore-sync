@@ -7,7 +7,7 @@ import { blobStore } from '~/storage/blob'
 import logger from '~/utils/logger'
 import {
 	getDefaultLogDirectory,
-	normalizeLogDirectory,
+	normalizeLogDirectoryForVault,
 	saveLogNote,
 } from '~/utils/log-note'
 import logsStringify from '~/utils/logs-stringify'
@@ -16,8 +16,25 @@ import BaseSettings from './settings.base'
 export default class TroubleshootingSettings extends BaseSettings {
 	private readonly blobGarbageCount = 5000
 	private readonly blobGarbageSizeBytes = 64 * 1024
+	private logDirectoryText: TextComponent | undefined
+	private logDirectoryDraftDirty = false
+	private logDirectoryCommitQueue: Promise<void> = Promise.resolve()
+	private logDirectoryCommitVersion = 0
+	private pendingLogDirectoryCommits = 0
+	private lastPersistedLogDirectory: string | undefined
+	private latestRequestedLogDirectory: string | undefined
 
 	async display() {
+		const previousText = this.logDirectoryText
+		if (previousText && this.logDirectoryDraftDirty) {
+			void this.commitLogDirectory(previousText)
+		}
+		this.logDirectoryText = undefined
+		this.logDirectoryDraftDirty = false
+		if (this.pendingLogDirectoryCommits === 0) {
+			this.lastPersistedLogDirectory = this.plugin.settings.logDirectory
+			this.latestRequestedLogDirectory = this.plugin.settings.logDirectory
+		}
 		this.containerEl.empty()
 		const defaultLogDirectory = getDefaultLogDirectory(this.app.vault.configDir)
 		new Setting(this.containerEl)
@@ -71,12 +88,23 @@ export default class TroubleshootingSettings extends BaseSettings {
 				}),
 			)
 			.addText((text) => {
+				this.logDirectoryText = text
 				text
 					.setPlaceholder(defaultLogDirectory)
-					.setValue(this.plugin.settings.logDirectory)
-				text.inputEl.addEventListener('blur', () =>
-					this.commitLogDirectory(text),
-				)
+					.setValue(
+						this.latestRequestedLogDirectory ??
+							this.plugin.settings.logDirectory,
+					)
+					.onChange(() => {
+						if (this.logDirectoryText === text) {
+							this.logDirectoryDraftDirty = true
+						}
+					})
+				text.inputEl.addEventListener('blur', () => {
+					if (this.logDirectoryText === text) {
+						void this.commitLogDirectory(text)
+					}
+				})
 			})
 
 		new Setting(this.containerEl)
@@ -122,26 +150,74 @@ export default class TroubleshootingSettings extends BaseSettings {
 		}
 	}
 
-	hide() {}
+	async hide() {
+		const text = this.logDirectoryText
+		if (text && this.logDirectoryDraftDirty) {
+			void this.commitLogDirectory(text)
+		}
+		await this.waitForLogDirectoryCommits()
+		if (this.logDirectoryText === text) {
+			this.logDirectoryText = undefined
+			this.logDirectoryDraftDirty = false
+		}
+	}
 
-	private async commitLogDirectory(text: TextComponent) {
-		const previousDirectory = this.plugin.settings.logDirectory
-		const directory = normalizeLogDirectory(
+	private commitLogDirectory(text: TextComponent) {
+		this.lastPersistedLogDirectory ??= this.plugin.settings.logDirectory
+		this.latestRequestedLogDirectory ??= this.plugin.settings.logDirectory
+		const directory = normalizeLogDirectoryForVault(
 			text.getValue(),
-			this.app.vault.configDir,
+			this.app.vault,
 		)
 		text.setValue(directory)
-		if (directory === previousDirectory) return
-
-		this.plugin.settings.logDirectory = directory
-		try {
-			await this.plugin.settingsService.saveSettings()
-		} catch (error) {
-			this.plugin.settings.logDirectory = previousDirectory
-			text.setValue(previousDirectory)
-			new Notice(i18n.t('settings.log.directorySaveError'))
-			logger.error('Failed to save log directory setting:', error)
+		if (this.logDirectoryText === text) {
+			this.logDirectoryDraftDirty = false
 		}
+		if (directory === this.latestRequestedLogDirectory) {
+			return this.logDirectoryCommitQueue
+		}
+
+		const commitVersion = ++this.logDirectoryCommitVersion
+		this.latestRequestedLogDirectory = directory
+		this.pendingLogDirectoryCommits++
+		const commit = this.logDirectoryCommitQueue.then(async () => {
+			try {
+				await this.plugin.settingsService.persistSettings({
+					logDirectory: directory,
+				})
+				this.lastPersistedLogDirectory = directory
+				this.plugin.settings.logDirectory = directory
+			} catch (error) {
+				logger.error('Failed to save log directory setting:', error)
+				if (commitVersion === this.logDirectoryCommitVersion) {
+					const rollbackDirectory =
+						this.lastPersistedLogDirectory ?? this.plugin.settings.logDirectory
+					this.plugin.settings.logDirectory = rollbackDirectory
+					this.latestRequestedLogDirectory = rollbackDirectory
+					const activeText = this.logDirectoryText
+					if (
+						activeText &&
+						!this.logDirectoryDraftDirty &&
+						activeText.getValue() === directory
+					) {
+						activeText.setValue(rollbackDirectory)
+					}
+					new Notice(i18n.t('settings.log.directorySaveError'))
+				}
+			} finally {
+				this.pendingLogDirectoryCommits--
+			}
+		})
+		this.logDirectoryCommitQueue = commit
+		return commit
+	}
+
+	private async waitForLogDirectoryCommits() {
+		let observedQueue: Promise<void>
+		do {
+			observedQueue = this.logDirectoryCommitQueue
+			await observedQueue
+		} while (observedQueue !== this.logDirectoryCommitQueue)
 	}
 
 	private get logs() {
@@ -153,6 +229,11 @@ export default class TroubleshootingSettings extends BaseSettings {
 
 	private async saveLogsToNote() {
 		try {
+			const text = this.logDirectoryText
+			if (text && this.logDirectoryDraftDirty) {
+				void this.commitLogDirectory(text)
+			}
+			await this.waitForLogDirectoryCommits()
 			const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
 			const fileName = `nutstore-logs-${timestamp}.md`
 			const content = `# Nutstore Plugin Logs\n\nGenerated at: ${new Date().toLocaleString()}\n\nPlugin version: ${this.plugin.manifest.version}\n\n---\n\n${this.logs}`

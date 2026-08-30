@@ -388,7 +388,7 @@ export class NutstoreSettingTab extends PluginSettingTab {
 
 	async onClose() {
 		await this.accountSettings.hide()
-		this.troubleshootingSettings.hide()
+		await this.troubleshootingSettings.hide()
 	}
 
 	unload() {
