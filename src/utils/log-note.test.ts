@@ -6,7 +6,7 @@ import {
 	saveLogNote,
 } from './log-note'
 
-function createMockVault() {
+function createMockVault(configDir = '.obsidian') {
 	const folders = new Set<string>()
 	const createFolder = vi.fn(async (path: string) => {
 		folders.add(path)
@@ -16,7 +16,7 @@ function createMockVault() {
 	})
 	const create = vi.fn(async (path: string) => ({ path }))
 	const vault = {
-		configDir: '.obsidian',
+		configDir,
 		adapter: {
 			exists: vi.fn(async (path: string) => folders.has(path)),
 			mkdir,
@@ -35,6 +35,14 @@ describe('normalizeLogDirectory', () => {
 			expect(normalizeLogDirectory(value)).toBe(DEFAULT_LOG_DIRECTORY)
 		},
 	)
+
+	it.each([
+		['number', 42],
+		['array', []],
+		['object', {}],
+	] as const)('uses the default for a non-string %s', (_type, value) => {
+		expect(normalizeLogDirectory(value)).toBe(DEFAULT_LOG_DIRECTORY)
+	})
 
 	it('normalizes separators, whitespace, and dot segments', () => {
 		expect(normalizeLogDirectory(' notes\\support//./logs/ ')).toBe(
@@ -76,6 +84,45 @@ describe('normalizeLogDirectory', () => {
 			expect(normalizeLogDirectory(value)).toBe(DEFAULT_LOG_DIRECTORY)
 		},
 	)
+
+	it.each(['config', 'config/logs', 'CONFIG/logs'])(
+		'rejects the configured Obsidian directory: %s',
+		(value) => {
+			expect(normalizeLogDirectory(value, 'config')).toBe(DEFAULT_LOG_DIRECTORY)
+		},
+	)
+
+	it('does not reject a same-named directory below another Vault folder', () => {
+		expect(normalizeLogDirectory('notes/config/logs', 'config')).toBe(
+			'notes/config/logs',
+		)
+	})
+
+	it('accepts path segments at the 255-byte UTF-8 boundary', () => {
+		const asciiPath = 'a'.repeat(255)
+		const multibytePath = '界'.repeat(85)
+
+		expect(new TextEncoder().encode(multibytePath).byteLength).toBe(255)
+		expect(normalizeLogDirectory(asciiPath)).toBe(asciiPath)
+		expect(normalizeLogDirectory(multibytePath)).toBe(multibytePath)
+	})
+
+	it.each([
+		['256 ASCII bytes', 'a'.repeat(256)],
+		['258 multibyte UTF-8 bytes', '界'.repeat(86)],
+	] as const)('rejects a path segment over the limit: %s', (_case, value) => {
+		expect(normalizeLogDirectory(value)).toBe(DEFAULT_LOG_DIRECTORY)
+	})
+
+	it('enforces the 1024-byte normalized directory boundary', () => {
+		const atLimit = Array.from({ length: 5 }, () => 'a'.repeat(204)).join('/')
+		const overLimit = `${atLimit}a`
+
+		expect(new TextEncoder().encode(atLimit).byteLength).toBe(1024)
+		expect(new TextEncoder().encode(overLimit).byteLength).toBe(1025)
+		expect(normalizeLogDirectory(atLimit)).toBe(atLimit)
+		expect(normalizeLogDirectory(overLimit)).toBe(DEFAULT_LOG_DIRECTORY)
+	})
 })
 
 describe('saveLogNote', () => {
@@ -139,4 +186,25 @@ describe('saveLogNote', () => {
 			)
 		},
 	)
+
+	it('keeps a non-hidden custom config directory out of Vault paths', async () => {
+		const { vault, create, mkdir } = createMockVault('config')
+
+		await saveLogNote(vault, 'config/logs', 'log.md', 'content')
+
+		expect(mkdir).not.toHaveBeenCalled()
+		expect(create).toHaveBeenCalledWith(
+			`${DEFAULT_LOG_DIRECTORY}/log.md`,
+			'content',
+		)
+	})
+
+	it('uses a safe fallback when the default is inside configDir', async () => {
+		const { vault, create, mkdir } = createMockVault('nutstore-sync')
+
+		await saveLogNote(vault, DEFAULT_LOG_DIRECTORY, 'log.md', 'content')
+
+		expect(mkdir).not.toHaveBeenCalled()
+		expect(create).toHaveBeenCalledWith('nutstore-sync-logs/log.md', 'content')
+	})
 })

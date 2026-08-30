@@ -76,6 +76,7 @@ export default class SettingsService extends BaseService {
 				.downloadChunkSize || DEFAULT_MOBILE_APP_DOWNLOAD_FILE_CHUNK_SIZE
 		this.plugin.settings.logDirectory = normalizeLogDirectory(
 			this.plugin.settings.logDirectory,
+			this.plugin.app.vault.configDir,
 		)
 		this.plugin.settings.ai ??= {
 			providers: {},

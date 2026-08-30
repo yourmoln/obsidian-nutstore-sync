@@ -2,6 +2,11 @@ import type { Vault } from 'obsidian'
 import { mkdirsVault } from './mkdirs-vault'
 
 export const DEFAULT_LOG_DIRECTORY = 'nutstore-sync/logs'
+export const MAX_LOG_DIRECTORY_SEGMENT_BYTES = 255
+export const MAX_LOG_DIRECTORY_PATH_BYTES = 1024
+
+const CONFIG_CONFLICT_LOG_DIRECTORY = 'nutstore-sync-logs'
+const UTF8_ENCODER = new TextEncoder()
 
 const WINDOWS_FORBIDDEN_PATH_CHARACTERS = /[<>:"|?*]/
 const WINDOWS_RESERVED_DEVICE_NAME =
@@ -24,18 +29,60 @@ function hasControlCharacter(value: string) {
 	return false
 }
 
-export function normalizeLogDirectory(value?: string | null): string {
-	const rawPath = value ?? ''
+function utf8ByteLength(value: string) {
+	return UTF8_ENCODER.encode(value).byteLength
+}
+
+function normalizeComparablePath(value: string) {
+	return value
+		.trim()
+		.replace(/\\/g, '/')
+		.split('/')
+		.map((segment) => segment.trim())
+		.filter((segment) => segment && segment !== '.')
+		.join('/')
+		.toLowerCase()
+}
+
+function isInsideConfigDirectory(path: string, configDir?: string | null) {
+	if (typeof configDir !== 'string') return false
+
+	const normalizedConfigDir = normalizeComparablePath(configDir)
+	if (!normalizedConfigDir) return false
+
+	const normalizedPath = normalizeComparablePath(path)
+	return (
+		normalizedPath === normalizedConfigDir ||
+		normalizedPath.startsWith(`${normalizedConfigDir}/`)
+	)
+}
+
+export function getDefaultLogDirectory(configDir?: string | null) {
+	return isInsideConfigDirectory(DEFAULT_LOG_DIRECTORY, configDir)
+		? CONFIG_CONFLICT_LOG_DIRECTORY
+		: DEFAULT_LOG_DIRECTORY
+}
+
+export function normalizeLogDirectory(
+	value: unknown,
+	configDir?: string | null,
+): string {
+	const fallbackDirectory = getDefaultLogDirectory(configDir)
+	if (typeof value !== 'string') {
+		return fallbackDirectory
+	}
+
+	const rawPath = value
 	if (
 		WINDOWS_FORBIDDEN_PATH_CHARACTERS.test(rawPath) ||
 		hasControlCharacter(rawPath)
 	) {
-		return DEFAULT_LOG_DIRECTORY
+		return fallbackDirectory
 	}
 
 	const path = rawPath.trim().replace(/\\/g, '/')
 	if (!path || isAbsolutePath(path)) {
-		return DEFAULT_LOG_DIRECTORY
+		return fallbackDirectory
 	}
 
 	const segments: string[] = []
@@ -49,14 +96,24 @@ export function normalizeLogDirectory(value?: string | null): string {
 			segment.startsWith('.') ||
 			rawSegment.endsWith(' ') ||
 			segment.endsWith('.') ||
-			WINDOWS_RESERVED_DEVICE_NAME.test(segment)
+			WINDOWS_RESERVED_DEVICE_NAME.test(segment) ||
+			utf8ByteLength(segment) > MAX_LOG_DIRECTORY_SEGMENT_BYTES
 		) {
-			return DEFAULT_LOG_DIRECTORY
+			return fallbackDirectory
 		}
 		segments.push(segment)
 	}
 
-	return segments.length > 0 ? segments.join('/') : DEFAULT_LOG_DIRECTORY
+	const normalizedPath = segments.join('/')
+	if (
+		!normalizedPath ||
+		utf8ByteLength(normalizedPath) > MAX_LOG_DIRECTORY_PATH_BYTES ||
+		isInsideConfigDirectory(normalizedPath, configDir)
+	) {
+		return fallbackDirectory
+	}
+
+	return normalizedPath
 }
 
 export async function saveLogNote(
@@ -65,7 +122,7 @@ export async function saveLogNote(
 	fileName: string,
 	content: string,
 ) {
-	const dirPath = normalizeLogDirectory(directory)
+	const dirPath = normalizeLogDirectory(directory, vault.configDir)
 	await mkdirsVault(vault, dirPath)
 	const filePath = `${dirPath}/${fileName}`
 	const file = await vault.create(filePath, content)

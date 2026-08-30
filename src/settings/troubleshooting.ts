@@ -6,7 +6,7 @@ import i18n from '~/i18n'
 import { blobStore } from '~/storage/blob'
 import logger from '~/utils/logger'
 import {
-	DEFAULT_LOG_DIRECTORY,
+	getDefaultLogDirectory,
 	normalizeLogDirectory,
 	saveLogNote,
 } from '~/utils/log-note'
@@ -19,6 +19,7 @@ export default class TroubleshootingSettings extends BaseSettings {
 
 	async display() {
 		this.containerEl.empty()
+		const defaultLogDirectory = getDefaultLogDirectory(this.app.vault.configDir)
 		new Setting(this.containerEl)
 			.setName(i18n.t('settings.troubleshooting.title'))
 			.setHeading()
@@ -66,12 +67,12 @@ export default class TroubleshootingSettings extends BaseSettings {
 			.setName(i18n.t('settings.log.directoryName'))
 			.setDesc(
 				i18n.t('settings.log.directoryDesc', {
-					defaultPath: DEFAULT_LOG_DIRECTORY,
+					defaultPath: defaultLogDirectory,
 				}),
 			)
 			.addText((text) => {
 				text
-					.setPlaceholder(DEFAULT_LOG_DIRECTORY)
+					.setPlaceholder(defaultLogDirectory)
 					.setValue(this.plugin.settings.logDirectory)
 				text.inputEl.addEventListener('blur', () =>
 					this.commitLogDirectory(text),
@@ -124,12 +125,23 @@ export default class TroubleshootingSettings extends BaseSettings {
 	hide() {}
 
 	private async commitLogDirectory(text: TextComponent) {
-		const directory = normalizeLogDirectory(text.getValue())
+		const previousDirectory = this.plugin.settings.logDirectory
+		const directory = normalizeLogDirectory(
+			text.getValue(),
+			this.app.vault.configDir,
+		)
 		text.setValue(directory)
-		if (directory === this.plugin.settings.logDirectory) return
+		if (directory === previousDirectory) return
 
 		this.plugin.settings.logDirectory = directory
-		await this.plugin.settingsService.saveSettings()
+		try {
+			await this.plugin.settingsService.saveSettings()
+		} catch (error) {
+			this.plugin.settings.logDirectory = previousDirectory
+			text.setValue(previousDirectory)
+			new Notice(i18n.t('settings.log.directorySaveError'))
+			logger.error('Failed to save log directory setting:', error)
+		}
 	}
 
 	private get logs() {

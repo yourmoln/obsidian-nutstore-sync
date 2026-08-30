@@ -10,7 +10,9 @@ type MockTextComponent = {
 
 const ui = vi.hoisted(() => ({
 	textComponents: [] as MockTextComponent[],
+	notices: [] as string[],
 }))
+const mockLogger = vi.hoisted(() => ({ error: vi.fn() }))
 
 vi.mock('obsidian', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('obsidian')>()
@@ -74,7 +76,13 @@ vi.mock('obsidian', async (importOriginal) => {
 		}
 	}
 
-	return { ...actual, Setting }
+	class Notice {
+		constructor(message: string) {
+			ui.notices.push(message)
+		}
+	}
+
+	return { ...actual, Notice, Setting }
 })
 
 vi.mock('~/components/CacheClearModal', () => ({
@@ -92,20 +100,21 @@ vi.mock('~/i18n', () => ({
 }))
 
 vi.mock('~/utils/logger', () => ({
-	default: {
-		error: vi.fn(),
-	},
+	default: mockLogger,
 }))
 
 describe('TroubleshootingSettings log notes', () => {
 	beforeEach(() => {
 		ui.textComponents = []
+		ui.notices = []
+		mockLogger.error.mockReset()
 	})
 
 	it('creates a log note in the configured directory', async () => {
 		const create = vi.fn().mockResolvedValue({ path: 'support/logs/log.md' })
 		const app = {
 			vault: {
+				configDir: '.obsidian',
 				adapter: {
 					exists: vi.fn().mockResolvedValue(true),
 					mkdir: vi.fn(),
@@ -141,11 +150,23 @@ describe('TroubleshootingSettings log notes', () => {
 			'normalizes a valid path',
 			' notes\\support//./logs ',
 			'notes/support/logs',
+			'.obsidian',
 		],
-		['replaces a hidden path', '.obsidian/logs', DEFAULT_LOG_DIRECTORY],
+		[
+			'replaces a hidden path',
+			'.obsidian/logs',
+			DEFAULT_LOG_DIRECTORY,
+			'.obsidian',
+		],
+		[
+			'replaces a custom config path',
+			'config/logs',
+			DEFAULT_LOG_DIRECTORY,
+			'config',
+		],
 	] as const)(
 		'%s when committing the log directory on blur',
-		async (_case, input, expected) => {
+		async (_case, input, expected, configDir) => {
 			const saveSettings = vi.fn(async () => undefined)
 			const plugin = {
 				settings: { logDirectory: 'support/logs' },
@@ -153,7 +174,7 @@ describe('TroubleshootingSettings log notes', () => {
 				loggerService: { logs: [], clear: vi.fn() },
 			}
 			const section = new TroubleshootingSettings(
-				{} as never,
+				{ vault: { configDir } } as never,
 				plugin as never,
 				{} as never,
 				{ empty: vi.fn() } as never,
@@ -173,4 +194,34 @@ describe('TroubleshootingSettings log notes', () => {
 			expect(saveSettings).toHaveBeenCalledOnce()
 		},
 	)
+
+	it('rolls back the input and runtime setting when persistence fails', async () => {
+		const saveSettings = vi.fn().mockRejectedValue(new Error('disk full'))
+		const plugin = {
+			settings: { logDirectory: 'support/logs' },
+			settingsService: { saveSettings },
+			loggerService: { logs: [], clear: vi.fn() },
+		}
+		const section = new TroubleshootingSettings(
+			{ vault: { configDir: '.obsidian' } } as never,
+			plugin as never,
+			{} as never,
+			{ empty: vi.fn() } as never,
+		)
+
+		await section.display()
+		const text = ui.textComponents[0]
+		await text.change('notes/logs')
+
+		await expect(text.blur()).resolves.toBeUndefined()
+
+		expect(saveSettings).toHaveBeenCalledOnce()
+		expect(text.getValue()).toBe('support/logs')
+		expect(plugin.settings.logDirectory).toBe('support/logs')
+		expect(ui.notices).toContain('settings.log.directorySaveError')
+		expect(mockLogger.error).toHaveBeenCalledWith(
+			'Failed to save log directory setting:',
+			expect.any(Error),
+		)
+	})
 })
